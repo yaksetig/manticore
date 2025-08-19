@@ -44,7 +44,14 @@ from .types import (
     ZeroDivisionTrap,
 )
 from .state import State
-from ..core.smtlib import BitVec, Bool, issymbolic, Operators, Expression
+from ..core.smtlib import (
+    BitVec,
+    Bool,
+    issymbolic,
+    Operators,
+    Expression,
+    BitVecConstant,
+)
 from ..core.state import Concretize
 from ..utils.event import Eventful
 from ..utils import config
@@ -611,7 +618,13 @@ class MemInst(Eventful):
         self._current_size = ln
         return True
 
-    def write_int(self, base: int, expression: typing.Union[Expression, int], size: int = 32):
+    def write_int(
+        self,
+        base: typing.Union[int, Expression],
+        expression: typing.Union[Expression, int],
+        size: int = 32,
+        state: "State" = None,
+    ):
         """
         Writes an integer into memory.
 
@@ -620,12 +633,16 @@ class MemInst(Eventful):
         :param size: Optional size of the integer
         """
         b = [
-            Operators.CHR(Operators.EXTRACT(expression, offset, 8)) for offset in range(0, size, 8)
+            Operators.CHR(Operators.EXTRACT(expression, offset, 8))
+            for offset in range(0, size, 8)
         ]
-        self.write_bytes(base, b)
+        self.write_bytes(base, b, state=state)
 
     def write_bytes(
-        self, base: int, data: typing.Union[str, typing.Sequence[int], typing.Sequence[bytes]]
+        self,
+        base: typing.Union[int, Expression],
+        data: typing.Union[str, typing.Sequence[int], typing.Sequence[bytes]],
+        state: "State" = None,
     ):
         """
         Writes  a stream of bytes into memory
@@ -634,11 +651,36 @@ class MemInst(Eventful):
         :param data: Data to write
         """
         self._publish("will_write_memory", base, base + len(data), data)
-        for idx, v in enumerate(data):
-            self._write_byte(base + idx, v)
+        if issymbolic(base):
+            assert state is not None, "State required for symbolic memory write"
+            limit = self.npages * PAGESIZE
+            last = base + len(data) - 1
+            cond = Operators.AND(
+                Operators.UGE(base, 0),
+                Operators.ULT(last, limit),
+            )
+            if not state.must_be_true(cond):
+                raise Concretize("Concretizing symbolic memory write", expression=base)
+            concrete_bases = state.solve_n(base, limit)
+            for idx, v in enumerate(data):
+                addr_expr = base + idx
+                v_expr = v if issymbolic(v) else BitVecConstant(8, Operators.ORD(v))
+                for conc in concrete_bases:
+                    caddr = conc + idx
+                    old = self._read_byte(caddr)
+                    old_expr = (
+                        old if issymbolic(old) else BitVecConstant(8, Operators.ORD(old))
+                    )
+                    new_val = Operators.ITEBV(8, addr_expr == caddr, v_expr, old_expr)
+                    self._write_byte(caddr, new_val)
+        else:
+            for idx, v in enumerate(data):
+                self._write_byte(base + idx, v)
         self._publish("did_write_memory", base, data)
 
-    def read_int(self, base: int, size: int = 32) -> int:
+    def read_int(
+        self, base: typing.Union[int, Expression], size: int = 32, state: "State" = None
+    ) -> int:
         """
         Reads bytes from memory and combines them into an int
 
@@ -647,10 +689,13 @@ class MemInst(Eventful):
         :return: The int in question
         """
         return Operators.CONCAT(
-            size, *map(Operators.ORD, reversed(self.read_bytes(base, size // 8)))
+            size,
+            *map(Operators.ORD, reversed(self.read_bytes(base, size // 8, state=state))),
         )
 
-    def read_bytes(self, base: int, size: int) -> typing.List[typing.Union[int, bytes]]:
+    def read_bytes(
+        self, base: typing.Union[int, Expression], size: int, state: "State" = None
+    ) -> typing.List[typing.Union[int, bytes, Expression]]:
         """
         Reads bytes from memory
 
@@ -659,9 +704,35 @@ class MemInst(Eventful):
         :return: List of bytes
         """
         self._publish("will_read_memory", base, base + size)
-        d = [self._read_byte(i) for i in range(base, base + size)]
-        self._publish("did_read_memory", base, d)
-        return d
+        if issymbolic(base):
+            assert state is not None, "State required for symbolic memory read"
+            limit = self.npages * PAGESIZE
+            last = base + size - 1
+            cond = Operators.AND(
+                Operators.UGE(base, 0),
+                Operators.ULT(last, limit),
+            )
+            if not state.must_be_true(cond):
+                raise Concretize("Concretizing symbolic memory read", expression=base)
+            concrete_bases = state.solve_n(base, limit)
+            res = []
+            for offset in range(size):
+                addr_expr = base + offset
+                ite = BitVecConstant(8, 0)
+                for conc in reversed(concrete_bases):
+                    caddr = conc + offset
+                    b = self._read_byte(caddr)
+                    b_expr = (
+                        b if issymbolic(b) else BitVecConstant(8, Operators.ORD(b))
+                    )
+                    ite = Operators.ITEBV(8, addr_expr == caddr, b_expr, ite)
+                res.append(ite)
+            self._publish("did_read_memory", base, res)
+            return res
+        else:
+            d = [self._read_byte(i) for i in range(base, base + size)]
+            self._publish("did_read_memory", base, d)
+            return d
 
     def dump(self):
         return self.read_bytes(0, self._current_size * PAGESIZE)
@@ -1322,6 +1393,7 @@ class ModuleInstance(Eventful):
                         else:
                             raise Exception("Unhandled control flow instruction")
                     else:  # This is a numeric instruction, hand it to the Executor
+                        self.executor.state = self._state
                         self.executor.dispatch(inst, store, aStack)
                     self._publish("did_execute_instruction", inst)
                     return True

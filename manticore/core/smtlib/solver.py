@@ -50,6 +50,11 @@ consts.add("defaultunsat", default=True, description="Consider solver timeouts a
 consts.add(
     "optimize", default=True, description="Use smtlib command optimize to find min/max if available"
 )
+consts.add(
+    "return_on_timeout",
+    default=False,
+    description="Return best known model when optimize times out",
+)
 
 # Regular expressions used by the solver
 RE_GET_EXPR_VALUE_ALL = re.compile(
@@ -527,8 +532,8 @@ class SMTLIBSolver(Solver):
         :param x: a symbol or expression
         :param goal: goal to achieve, either 'maximize' or 'minimize'
         :param max_iter: maximum number of iterations allowed
+        :return: best known value if ``smt.return_on_timeout`` is enabled and a timeout occurs
         """
-        # TODO: consider adding a mode to return best known value on timeout
         assert goal in ("maximize", "minimize")
         operation = {"maximize": Operators.UGE, "minimize": Operators.ULE}[goal]
 
@@ -568,6 +573,8 @@ class SMTLIBSolver(Solver):
 
                 if time.time() - start > consts.timeout:
                     SOLVER_STATS["timeout"] += 1
+                    if consts.return_on_timeout and last_value is not None:
+                        return last_value
                     raise SolverError("Timeout")
 
         # reset to before the dichotomic search
@@ -594,6 +601,8 @@ class SMTLIBSolver(Solver):
                     raise SolverError("Optimizing error, maximum number of iterations was reached")
                 if time.time() - start > consts.timeout:
                     SOLVER_STATS["timeout"] += 1
+                    if consts.return_on_timeout and last_value is not None:
+                        return last_value
                     raise SolverError("Timeout")
             if last_value is not None:
                 return last_value
@@ -677,8 +686,8 @@ class SMTLIBSolver(Solver):
         :param x: a symbol or expression
         :param goal: goal to achieve, either 'maximize' or 'minimize'
         :param max_iter: maximum number of iterations allowed
+        :return: best known value if ``smt.return_on_timeout`` is enabled and a timeout occurs
         """
-        # TODO: consider adding a mode to return best known value on timeout
         assert goal in ("maximize", "minimize")
         operation = {"maximize": Operators.UGE, "minimize": Operators.ULE}[goal]
 
@@ -699,6 +708,10 @@ class SMTLIBSolver(Solver):
 
             if _status == "sat":
                 return self._getvalue(aux)
+            if _status == "unknown":
+                SOLVER_STATS["timeout"] += 1
+                if consts.return_on_timeout:
+                    return self._getvalue(aux)
             raise SolverError("Optimize failed")
 
     def get_value(self, constraints: ConstraintSet, *expressions):

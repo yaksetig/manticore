@@ -2,6 +2,9 @@
 
 ## [Unreleased](https://github.com/trailofbits/manticore/compare/0.3.7...HEAD)
 
+### Other
+* Allow returning the best model on solver timeout via ``smt.return_on_timeout`` configuration option
+
 ## 0.3.7 - 2022-02
 
 Thanks to our external contributors!

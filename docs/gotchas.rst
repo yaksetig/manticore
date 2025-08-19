@@ -35,3 +35,11 @@ Client code should use the :meth:`~manticore.core.ManticoreBase.locked_context` 
 ---------------
 
 The `random` policy, which is the Manticore default, is not actually random and is instead deterministically seeded. This means that running the same analysis twice should return the same results (and get stuck in the same places).
+
+Solver optimization timeouts
+----------------------------
+
+When searching for optimal values, the underlying SMT solver may time out before
+finishing the optimization. By default this raises a ``SolverError``. Set the
+``smt.return_on_timeout`` configuration option to obtain the best model found so
+far instead.

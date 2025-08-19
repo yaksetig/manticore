@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 consts = config.get_group("native")
 consts.add("stdin_size", default=256, description="Maximum symbolic stdin size")
+consts.add("cpu", default="i386", description="CPU architecture to use for native binaries")
 
 
 class Manticore(ManticoreBase):
@@ -150,7 +151,7 @@ class Manticore(ManticoreBase):
             raise ManticoreError(f"Invalid binary: {path}")
 
     @classmethod
-    def decree(cls, path, concrete_start="", **kwargs):
+    def decree(cls, path, concrete_start="", arch=None, **kwargs):
         """
         Constructor for Decree binary analysis.
 
@@ -161,7 +162,7 @@ class Manticore(ManticoreBase):
         :rtype: Manticore
         """
         try:
-            return cls(_make_decree(path, concrete_start), **kwargs)
+            return cls(_make_decree(path, concrete_start, arch=arch), **kwargs)
         except KeyError:  # FIXME(mark) magic parsing for DECREE should raise better error
             raise ManticoreError(f"Invalid binary: {path}")
 
@@ -427,11 +428,14 @@ def _make_initial_state(binary_path, **kwargs):
     return state
 
 
-def _make_decree(program, concrete_start="", **kwargs):
+def _make_decree(program, concrete_start="", arch=None, **kwargs):
     from ..platforms import decree
 
+    if arch is None:
+        arch = consts.cpu
+
     constraints = ConstraintSet()
-    platform = decree.SDecree(constraints, program)
+    platform = decree.SDecree(constraints, program, arch=arch)
     initial_state = State(constraints, platform)
     logger.info("Loading program %s", program)
 

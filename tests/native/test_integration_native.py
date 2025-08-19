@@ -235,6 +235,8 @@ class NativeIntegrationTest(unittest.TestCase):
                 "--core.procs",
                 "4",
                 "--no-color",
+                "--native.cpu",
+                "i386",
                 "--policy",
                 "uncovered",
                 filename,

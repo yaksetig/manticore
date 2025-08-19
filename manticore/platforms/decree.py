@@ -1,9 +1,9 @@
 from . import cgcrandom
 
 # TODO use cpu factory
-from ..native.cpu.x86 import I386Cpu
+from ..native.cpu.cpufactory import CpuFactory
 from ..native.cpu.abstractcpu import Interruption, ConcretizeRegister, ConcretizeArgument
-from ..native.memory import SMemory32, Memory32
+from ..native.memory import SMemory32, Memory32, Memory64, SMemory64
 from ..core.smtlib import *
 from ..core.state import TerminateState
 from ..binary import CGCElf
@@ -92,7 +92,7 @@ class Decree(Platform):
     CGC_SIZE_MAX = 4294967295
     CGC_FD_SETSIZE = 32
 
-    def __init__(self, programs, **kwargs):
+    def __init__(self, programs, arch="i386", **kwargs):
         """
         Builds a Decree OS
         :param cpus: CPU for this platform
@@ -103,6 +103,7 @@ class Decree(Platform):
         programs = programs.split(",")
         super().__init__(path=programs[0], **kwargs)
 
+        self.arch = arch
         self.program = programs[0]
         self.clocks = 0
         self.files = []
@@ -161,7 +162,8 @@ class Decree(Platform):
         return self
 
     def _mk_proc(self):
-        return I386Cpu(Memory32())
+        mem = Memory32() if self.arch in {"i386", "armv7"} else Memory64()
+        return CpuFactory.get_cpu(mem, self.arch)
 
     @property
     def current(self):
@@ -949,7 +951,7 @@ class SDecree(Decree):
     A symbolic extension of a Decree Operating System .
     """
 
-    def __init__(self, constraints, programs, symbolic_random=None):
+    def __init__(self, constraints, programs, symbolic_random=None, arch="i386"):
         """
         Builds a symbolic extension of a Decree OS
         :param constraints: a constraint set
@@ -958,10 +960,11 @@ class SDecree(Decree):
         """
         self.random = 0
         self._constraints = constraints
-        super().__init__(programs)
+        super().__init__(programs, arch=arch)
 
     def _mk_proc(self):
-        return I386Cpu(SMemory32(self.constraints))
+        mem = SMemory32(self.constraints) if self.arch in {"i386", "armv7"} else SMemory64(self.constraints)
+        return CpuFactory.get_cpu(mem, self.arch)
 
     @property
     def constraints(self):

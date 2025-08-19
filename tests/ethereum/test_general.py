@@ -30,7 +30,7 @@ from manticore.ethereum import (
     EVMContract,
     verifier,
 )
-from manticore.ethereum.plugins import FilterFunctions
+from manticore.ethereum.plugins import FilterFunctions, CoveragePlugin
 from manticore.ethereum.solidity import SolidityMetadata
 from manticore.platforms import evm
 from manticore.platforms.evm import EVMWorld, ConcretizeArgument, concretized_args, Return, Stop
@@ -1044,6 +1044,7 @@ class EthTests(unittest.TestCase):
                         d.append(instruction.pc)
 
         mevm = self.mevm
+        mevm.register_plugin(CoveragePlugin())
         p = TestPlugin()
         mevm.register_plugin(p)
 

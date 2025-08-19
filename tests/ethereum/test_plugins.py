@@ -4,7 +4,7 @@ import os
 import unittest
 
 import shutil
-from manticore.ethereum.plugins import VerboseTrace, KeepOnlyIfStorageChanges
+from manticore.ethereum.plugins import VerboseTrace, KeepOnlyIfStorageChanges, CoveragePlugin
 
 from manticore.ethereum import ManticoreEVM
 
@@ -37,6 +37,7 @@ class EthPluginsTests(unittest.TestCase):
     def test_verbose_trace(self):
         source_code = """contract X {}"""
         self.mevm.register_plugin(VerboseTrace())
+        self.mevm.register_plugin(CoveragePlugin())
 
         # owner address is hardcodded so the contract address is predictable
         owner = self.mevm.create_account(

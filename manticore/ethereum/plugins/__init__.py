@@ -4,9 +4,9 @@ from functools import reduce
 import re
 import logging
 
-from ..core.plugin import Plugin
-from ..core.smtlib import Operators, to_constant
-from ..utils.enums import StateLists
+from ...core.plugin import Plugin
+from ...core.smtlib import Operators, to_constant
+from ...utils.enums import StateLists
 import pyevmasm as EVMAsm
 
 logger = logging.getLogger(__name__)
@@ -271,3 +271,5 @@ class SkipRevertBasicBlocks(Plugin):
                     state.constrain(arguments[1] == False)
 
                 # This may have added an impossible constraint.
+
+from .coverage import CoveragePlugin

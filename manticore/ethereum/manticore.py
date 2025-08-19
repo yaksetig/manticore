@@ -418,7 +418,6 @@ class ManticoreEVM(ManticoreBase):
             for p in plugins:
                 self.register_plugin(p)
         self.subscribe("will_terminate_state", self._terminate_state_callback)
-        self.subscribe("did_evm_execute_instruction", self._did_evm_execute_instruction_callback)
         if consts.sha3 is consts.sha3.concretize:
             self.subscribe("on_symbolic_function", self._on_concretize)
         elif consts.sha3 is consts.sha3.symbolicate:
@@ -1492,21 +1491,6 @@ class ManticoreEVM(ManticoreBase):
             # if not a revert, we save the state for further transactions
             with self.locked_context("ethereum.saved_states", list) as saved_states:
                 saved_states.append(state.id)
-
-    # Callbacks
-    def _did_evm_execute_instruction_callback(self, state, instruction, arguments, result):
-        """INTERNAL USE"""
-        # logger.debug("%s", state.platform.current_vm)
-        # TODO move to a plugin
-        at_init = state.platform.current_transaction.sort == "CREATE"
-        coverage_context_name = "evm.coverage"
-        with self.locked_context(coverage_context_name, list) as coverage:
-            if (state.platform.current_vm.address, instruction.pc, at_init) not in coverage:
-                coverage.append((state.platform.current_vm.address, instruction.pc, at_init))
-
-        state.context.setdefault("evm.trace", []).append(
-            (state.platform.current_vm.address, instruction.pc, at_init)
-        )
 
     def get_metadata(self, address) -> Optional[SolidityMetadata]:
         """Gets the solidity metadata for address.

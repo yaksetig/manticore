@@ -34,6 +34,12 @@ Worker
 EVM
 ^^^
 
+.. py:class:: CoveragePlugin
+
+   Tracks executed EVM instructions for coverage analysis.  The plugin
+   populates the global ``evm.coverage`` list and records per-state
+   execution traces in ``evm.trace``.
+
 .. py:function:: will_decode_instruction_callback(self, pc)
 
 .. py:function:: will_evm_execute_instruction_callback(self, instruction, args)

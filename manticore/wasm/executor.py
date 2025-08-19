@@ -45,6 +45,7 @@ class Executor(Eventful):
 
     def __init__(self, *args, **kwargs):
 
+        self.state = None
         self._mapping = {
             0x00: self.unreachable,
             0x01: self.nop,
@@ -236,6 +237,7 @@ class Executor(Eventful):
         self._mapping = state["mapping"]
         self.zero_div = state["zero_div"]
         self.overflow = state["overflow"]
+        self.state = None
         super().__setstate__(state)
 
     def check_overflow(self, expression) -> bool:
@@ -346,14 +348,8 @@ class Executor(Eventful):
         mem = store.mems[a]
         stack.has_type_on_top(I32, 1)
         i = stack.pop()
-        if issymbolic(i):
-            raise ConcretizeStack(
-                -1, I32, "Concretizing memory read", i
-            )  # TODO - Implement a symbolic memory model
         ea = i + imm.offset
-        if (ea + 4) - 1 not in mem:
-            raise OutOfBoundsMemoryTrap(ea + 4)
-        c = mem.read_int(ea, 32)
+        c = mem.read_int(ea, 32, state=self.state)
         stack.push(I32.cast(c))
 
     def i64_load(self, store, stack, imm: MemoryImm):
@@ -364,14 +360,8 @@ class Executor(Eventful):
         mem = store.mems[a]
         stack.has_type_on_top(I32, 1)
         i = stack.pop()
-        if issymbolic(i):
-            raise ConcretizeStack(
-                -1, I32, "Concretizing memory read", i
-            )  # TODO - Implement a symbolic memory model
         ea = i + imm.offset
-        if (ea + 8) - 1 not in mem:
-            raise OutOfBoundsMemoryTrap(ea + 8)
-        c = mem.read_int(ea, 64)
+        c = mem.read_int(ea, 64, state=self.state)
         stack.push(I64.cast(c))
 
     def int_load(self, store, stack, imm: MemoryImm, ty: type, size: int, signed: bool):
@@ -383,16 +373,8 @@ class Executor(Eventful):
         mem = store.mems[a]
         stack.has_type_on_top(I32, 1)
         i = stack.pop()
-        if issymbolic(i):
-            raise ConcretizeStack(
-                -1, I32, "Concretizing memory read", i
-            )  # TODO - Implement a symbolic memory model
         ea = i + imm.offset
-        if ea not in mem:
-            raise OutOfBoundsMemoryTrap(ea)
-        if ea + (size // 8) - 1 not in mem:
-            raise OutOfBoundsMemoryTrap(ea + (size // 8))
-        c = mem.read_int(ea, size)
+        c = mem.read_int(ea, size, state=self.state)
         width = 32 if ty is I32 else 64
         if signed:
             c = Operators.SEXTEND(c, size, width)
@@ -442,23 +424,15 @@ class Executor(Eventful):
         c = stack.pop()
         stack.has_type_on_top(I32, 1)
         i = stack.pop()
-        if issymbolic(i):
-            raise ConcretizeStack(
-                -2, I32, "Concretizing integer memory write", i
-            )  # TODO - Implement a symbolic memory model
         ea = i + imm.offset
         N = n if n else (32 if ty is I32 else 64)
         mask = (1 << N) - 1
-        if ea not in mem:
-            raise OutOfBoundsMemoryTrap(ea)
-        if (ea + (N // 8)) - 1 not in mem:
-            raise OutOfBoundsMemoryTrap(ea + (N // 8))
         if n:
             b = [Operators.CHR(Operators.EXTRACT(c & mask, offset, 8)) for offset in range(0, N, 8)]
         else:
             b = [Operators.CHR(Operators.EXTRACT(c, offset, 8)) for offset in range(0, N, 8)]
 
-        mem.write_bytes(ea, b)
+        mem.write_bytes(ea, b, state=self.state)
 
     def i32_store(self, store, stack, imm: MemoryImm):
         self.int_store(store, stack, imm, I32)
@@ -1212,16 +1186,8 @@ class Executor(Eventful):
         mem = store.mems[a]
         stack.has_type_on_top(I32, 1)
         i = stack.pop()
-        if issymbolic(i):
-            raise ConcretizeStack(
-                -1, I32, "Concretizing float memory read", i
-            )  # TODO - Implement a symbolic memory model
         ea = i + imm.offset
-        if ea not in mem:
-            raise OutOfBoundsMemoryTrap(ea)
-        if (ea + (size // 8)) - 1 not in mem:
-            raise OutOfBoundsMemoryTrap(ea + (size // 8))
-        c = mem.read_int(ea, size)
+        c = mem.read_int(ea, size, state=self.state)
         # Mypy can't figure out that that ty will definitely have a cast method, so we ignore the type
         ret = ty.cast(c)  # type: ignore
         stack.push(ret)
@@ -1238,23 +1204,17 @@ class Executor(Eventful):
         mem = store.mems[a]
         c = stack.pop()
         i = stack.pop()
-        if issymbolic(i):
-            raise ConcretizeStack(-2, I32, "Concretizing memory address for float_store", i)
         ea = i + imm.offset
         if ty == F32:
             size = 32
         else:
             size = 64
-        if ea not in mem:
-            raise OutOfBoundsMemoryTrap(ea)
-        if (ea + (size // 8)) - 1 not in mem:
-            raise OutOfBoundsMemoryTrap(ea + (size // 8))
         if not issymbolic(c):
             c = struct.unpack(
                 "i" if size == 32 else "q", struct.pack("f" if size == 32 else "d", c)
             )[0]
         b = [Operators.CHR(Operators.EXTRACT(c, offset, 8)) for offset in range(0, size, 8)]
-        mem.write_bytes(ea, b)
+        mem.write_bytes(ea, b, state=self.state)
 
     def float_push_compare_return(self, stack, v, rettype=I32):
         if issymbolic(v):

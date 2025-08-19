@@ -1551,30 +1551,56 @@ class LazySMemory(SMemory):
         :return:
         """
 
-        # TODO: for the moment we just treat symbolic bytes as bytes that don't match.
-        # for our simple test cases right now, the bytes we're interested in scanning
-        # for will all just be there concretely
-        # TODO: Can probably do something smarter here like Boyer-Moore, but unnecessary
-        # if we're looking for short strings.
-
         # Querying mem with an index returns [bytes]
         if isinstance(data_to_find, bytes):
             data_to_find = [bytes([c]) for c in data_to_find]
 
+        pattern_len = len(data_to_find)
+        if pattern_len == 0:
+            return
+
+        # Boyer–Moore-Horspool bad character table
+        shift = [pattern_len] * 256
+        for idx in range(pattern_len - 1):
+            shift[data_to_find[idx][0]] = pattern_len - idx - 1
+
         for mapping in sorted(self.maps):
-            for ptr in mapping:
-                if ptr + len(data_to_find) >= mapping.end:
-                    break
+            ptr = mapping.start
+            end = mapping.end
+            while ptr + pattern_len <= end:
+                candidate = mapping[ptr : ptr + pattern_len]
 
-                candidate = mapping[ptr : ptr + len(data_to_find)]
+                last_byte = candidate[-1]
+                if issymbolic(last_byte):
+                    step = pattern_len
+                else:
+                    if isinstance(last_byte, bytes):
+                        lb = last_byte[0]
+                    else:
+                        lb = last_byte
+                    step = shift[lb]
 
-                # TODO: treat symbolic bytes as bytes that don't match. for our simple tests right now, the
-                # bytes will be there concretely
-                if issymbolic(candidate[0]):
-                    break
+                match = True
+                sym_constraints = []
+                for c, p in zip(candidate, data_to_find):
+                    if issymbolic(c):
+                        sym_constraints.append(c == Operators.ORD(p))
+                    else:
+                        if c != p:
+                            match = False
+                            break
 
-                if candidate == data_to_find:
-                    yield ptr
+                if match:
+                    if sym_constraints:
+                        constraint = sym_constraints[0]
+                        for extra in sym_constraints[1:]:
+                            constraint = Operators.AND(constraint, extra)
+                        if self._solver.can_be_true(self.constraints, constraint):
+                            yield ptr
+                    else:
+                        yield ptr
+
+                ptr += step
 
 
 class Memory32(Memory):
